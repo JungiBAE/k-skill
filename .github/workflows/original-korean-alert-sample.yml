@@ -1,0 +1,66 @@
+name: Original Korean alert voice sample
+
+on:
+  push:
+    branches:
+      - voice/original-korean-alert-20260729
+    paths:
+      - experiments/original_korean_alert/**
+      - .github/workflows/original-korean-alert-sample.yml
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HF_HOME: ${{ runner.temp }}/huggingface
+      HF_HUB_DISABLE_XET: "1"
+      VOICE_OUTPUT_DIR: voice_output
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out experiment branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install audio runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libsndfile1
+
+      - name: Install CPU inference dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install qwen-tts soundfile
+
+      - name: Generate three original Korean candidates
+        run: python experiments/original_korean_alert/generate.py
+
+      - name: Create normalized MP3 previews
+        shell: bash
+        run: |
+          set -euo pipefail
+          for wav in voice_output/*.wav; do
+            mp3="${wav%.wav}.mp3"
+            ffmpeg -hide_banner -loglevel error -y -i "$wav" \
+              -af "loudnorm=I=-16:TP=-1.5:LRA=7" \
+              -codec:a libmp3lame -b:a 192k "$mp3"
+          done
+          find voice_output -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
+      - name: Upload voice candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-korean-alert-candidates-20260729
+          path: voice_output/
+          if-no-files-found: error
+          retention-days: 7
